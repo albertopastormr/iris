@@ -30,9 +30,7 @@ fn main() -> Result<()> {
                 };
 
                 // 2. Prepare the response message
-                let mut response_header = query_msg.header;
-                response_header.id = 1234; // Constant for this stage
-                response_header.qr = true; // Mark as response
+                let mut response_header = query_msg.header.into_response();
                 response_header.ancount = 1;
 
                 let answer = DnsRecord {

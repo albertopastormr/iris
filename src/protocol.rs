@@ -21,6 +21,13 @@ pub trait ByteCodec: Sized {
 pub const HEADER_SIZE: usize = 12;
 pub const MAX_PACKET_SIZE: usize = 512;
 
+// DNS Opcodes
+pub const OPCODE_STANDARD_QUERY: u8 = 0;
+
+// DNS Response Codes
+pub const RCODE_NO_ERROR: u8 = 0;
+pub const RCODE_NOT_IMPLEMENTED: u8 = 4;
+
 // DNS Header Flag Bit Positions
 const QR_SHIFT: u8 = 15;
 const OPCODE_SHIFT: u8 = 11;
@@ -48,7 +55,7 @@ impl TryFrom<u16> for QueryType {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct DnsHeader {
     pub id: u16,
     pub qr: bool,   // Query/Response (0 for query, 1 for response)
@@ -136,6 +143,30 @@ impl ByteCodec for DnsHeader {
         buf.put_u16(self.ancount);
         buf.put_u16(self.nscount);
         buf.put_u16(self.arcount);
+    }
+}
+
+impl DnsHeader {
+    pub fn into_response(self) -> Self {
+        DnsHeader {
+            id: self.id,
+            qr: true,
+            opcode: self.opcode,
+            aa: false,
+            tc: false,
+            rd: self.rd,
+            ra: false,
+            z: 0,
+            rcode: if self.opcode == OPCODE_STANDARD_QUERY {
+                RCODE_NO_ERROR
+            } else {
+                RCODE_NOT_IMPLEMENTED
+            },
+            qdcount: self.qdcount,
+            ancount: 0, // Should be updated by the caller
+            nscount: 0,
+            arcount: 0,
+        }
     }
 }
 
@@ -399,6 +430,7 @@ mod tests {
         let original = DnsMessage {
             header,
             questions: vec![q1, q2],
+            answers: vec![],
         };
 
         let mut buf = BytesMut::new();
@@ -420,5 +452,41 @@ mod tests {
         let mut buf = data;
         let result = DnsQuestion::from_bytes(&mut buf);
         assert!(matches!(result, Err(DnsError::TooShort { .. })));
+    }
+
+    #[test]
+    fn test_header_into_response() {
+        let mut header = DnsHeader::default();
+        header.opcode = OPCODE_STANDARD_QUERY;
+        
+        let response = header.into_response();
+        assert!(response.qr);
+        assert_eq!(response.rcode, RCODE_NO_ERROR);
+
+        header.opcode = 1; // Not a standard query
+        let response = header.into_response();
+        assert_eq!(response.rcode, RCODE_NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn test_record_codec() {
+        let record = DnsRecord {
+            name: "test.com".to_string(),
+            rtype: QueryType::A,
+            class: 1,
+            ttl: 300,
+            data: RData::A(std::net::Ipv4Addr::new(1, 2, 3, 4)),
+        };
+
+        let mut buf = BytesMut::new();
+        record.to_bytes(&mut buf);
+
+        let mut read_buf = buf.freeze();
+        let decoded = DnsRecord::from_bytes(&mut read_buf).unwrap();
+
+        assert_eq!(decoded.name, "test.com");
+        assert_eq!(decoded.ttl, 300);
+        let RData::A(addr) = decoded.data;
+        assert_eq!(addr, std::net::Ipv4Addr::new(1, 2, 3, 4));
     }
 }
