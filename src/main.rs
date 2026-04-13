@@ -31,20 +31,23 @@ fn main() -> Result<()> {
 
                 // 2. Prepare the response message
                 let mut response_header = query_msg.header.into_response();
-                response_header.ancount = 1;
+                
+                let answers: Vec<DnsRecord> = query_msg.questions.iter().map(|q| {
+                    DnsRecord {
+                        name: q.name.clone(),
+                        rtype: QueryType::A,
+                        class: 1,
+                        ttl: 60,
+                        data: RData::A(Ipv4Addr::new(8, 8, 8, 8)),
+                    }
+                }).collect();
 
-                let answer = DnsRecord {
-                    name: "codecrafters.io".to_string(),
-                    rtype: QueryType::A,
-                    class: 1,
-                    ttl: 60,
-                    data: RData::A(Ipv4Addr::new(8, 8, 8, 8)),
-                };
+                response_header.ancount = answers.len() as u16;
 
                 let response_msg = DnsMessage {
                     header: response_header,
                     questions: query_msg.questions,
-                    answers: vec![answer],
+                    answers,
                 };
 
                 // 3. Serialize and send back
