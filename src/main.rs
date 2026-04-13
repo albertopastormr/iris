@@ -3,7 +3,8 @@ use bytes::BytesMut;
 use std::net::UdpSocket;
 
 mod protocol;
-use protocol::{ByteCodec, DnsMessage, MAX_PACKET_SIZE};
+use protocol::{ByteCodec, DnsMessage, DnsRecord, QueryType, RData, MAX_PACKET_SIZE};
+use std::net::Ipv4Addr;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:2053";
 
@@ -32,10 +33,20 @@ fn main() -> Result<()> {
                 let mut response_header = query_msg.header;
                 response_header.id = 1234; // Constant for this stage
                 response_header.qr = true; // Mark as response
-                
+                response_header.ancount = 1;
+
+                let answer = DnsRecord {
+                    name: "codecrafters.io".to_string(),
+                    rtype: QueryType::A,
+                    class: 1,
+                    ttl: 60,
+                    data: RData::A(Ipv4Addr::new(8, 8, 8, 8)),
+                };
+
                 let response_msg = DnsMessage {
                     header: response_header,
                     questions: query_msg.questions,
+                    answers: vec![answer],
                 };
 
                 // 3. Serialize and send back

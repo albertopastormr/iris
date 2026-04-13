@@ -148,26 +148,7 @@ pub struct DnsQuestion {
 
 impl ByteCodec for DnsQuestion {
     fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
-        let mut name = String::new();
-        
-        loop {
-            let len = buf.get_u8();
-            if len == 0 {
-                break;
-            }
-
-            if !name.is_empty() {
-                name.push('.');
-            }
-
-            let mut label_bytes = vec![0; len as usize];
-            if buf.remaining() < len as usize {
-                return Err(DnsError::TooShort { expected: len as usize, actual: buf.remaining() });
-            }
-            buf.copy_to_slice(&mut label_bytes);
-            name.push_str(&String::from_utf8(label_bytes)?);
-        }
-
+        let name = decode_name(buf)?;
         let qtype = QueryType::try_from(buf.get_u16())?;
         let qclass = buf.get_u16();
 
@@ -175,15 +156,75 @@ impl ByteCodec for DnsQuestion {
     }
 
     fn to_bytes(&self, buf: &mut BytesMut) {
-        // Encode Name as Labels
-        for label in self.name.split('.') {
-            buf.put_u8(label.len() as u8);
-            buf.put_slice(label.as_bytes());
-        }
-        buf.put_u8(0); // Null terminator
-
+        encode_name(&self.name, buf);
         buf.put_u16(self.qtype as u16);
         buf.put_u16(self.qclass);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RData {
+    A(std::net::Ipv4Addr),
+}
+
+impl RData {
+    pub fn from_bytes(buf: &mut impl Buf, rtype: QueryType, rdlength: u16) -> Result<Self, DnsError> {
+        match rtype {
+            QueryType::A => {
+                if rdlength != 4 {
+                    // In a production server, we'd define a specific error for this
+                    return Err(DnsError::MalformedHeader);
+                }
+                let mut octets = [0u8; 4];
+                buf.copy_to_slice(&mut octets);
+                Ok(RData::A(std::net::Ipv4Addr::from(octets)))
+            }
+            _ => Err(DnsError::InvalidQueryType(rtype as u16)),
+        }
+    }
+
+    pub fn to_bytes(&self, buf: &mut BytesMut) {
+        match self {
+            RData::A(addr) => buf.put_slice(&addr.octets()),
+        }
+    }
+
+    pub fn len(&self) -> u16 {
+        match self {
+            RData::A(_) => 4,
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct DnsRecord {
+    pub name: String,
+    pub rtype: QueryType,
+    pub class: u16,
+    pub ttl: u32,
+    pub data: RData,
+}
+
+impl ByteCodec for DnsRecord {
+    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
+        let name = decode_name(buf)?;
+        let rtype = QueryType::try_from(buf.get_u16())?;
+        let class = buf.get_u16();
+        let ttl = buf.get_u32();
+        let rdlength = buf.get_u16();
+        let data = RData::from_bytes(buf, rtype, rdlength)?;
+
+        Ok(DnsRecord { name, rtype, class, ttl, data })
+    }
+
+    fn to_bytes(&self, buf: &mut BytesMut) {
+        encode_name(&self.name, buf);
+        buf.put_u16(self.rtype as u16);
+        buf.put_u16(self.class);
+        buf.put_u32(self.ttl);
+        buf.put_u16(self.data.len());
+        self.data.to_bytes(buf);
     }
 }
 
@@ -191,18 +232,24 @@ impl ByteCodec for DnsQuestion {
 pub struct DnsMessage {
     pub header: DnsHeader,
     pub questions: Vec<DnsQuestion>,
+    pub answers: Vec<DnsRecord>,
 }
 
 impl ByteCodec for DnsMessage {
     fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
         let header = DnsHeader::from_bytes(buf)?;
         let mut questions = Vec::with_capacity(header.qdcount as usize);
+        let mut answers = Vec::with_capacity(header.ancount as usize);
 
         for _ in 0..header.qdcount {
             questions.push(DnsQuestion::from_bytes(buf)?);
         }
 
-        Ok(DnsMessage { header, questions })
+        for _ in 0..header.ancount {
+            answers.push(DnsRecord::from_bytes(buf)?);
+        }
+
+        Ok(DnsMessage { header, questions, answers })
     }
 
     fn to_bytes(&self, buf: &mut BytesMut) {
@@ -210,7 +257,45 @@ impl ByteCodec for DnsMessage {
         for question in &self.questions {
             question.to_bytes(buf);
         }
+        for answer in &self.answers {
+            answer.to_bytes(buf);
+        }
     }
+}
+
+// --- Helper Functions for Name Encoding/Decoding ---
+
+fn encode_name(name: &str, buf: &mut BytesMut) {
+    for label in name.split('.') {
+        buf.put_u8(label.len() as u8);
+        buf.put_slice(label.as_bytes());
+    }
+    buf.put_u8(0);
+}
+
+fn decode_name(buf: &mut impl Buf) -> Result<String, DnsError> {
+    let mut name = String::new();
+    loop {
+        let len = buf.get_u8();
+        if len == 0 {
+            break;
+        }
+
+        if !name.is_empty() {
+            name.push('.');
+        }
+
+        let mut label_bytes = vec![0; len as usize];
+        if buf.remaining() < len as usize {
+            return Err(DnsError::TooShort {
+                expected: len as usize,
+                actual: buf.remaining(),
+            });
+        }
+        buf.copy_to_slice(&mut label_bytes);
+        name.push_str(&String::from_utf8(label_bytes)?);
+    }
+    Ok(name)
 }
 
 #[cfg(test)]
