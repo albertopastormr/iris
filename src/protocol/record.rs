@@ -1,5 +1,5 @@
 use bytes::BufMut;
-use crate::protocol::{ByteCodec, DnsError, PacketBuffer, QueryType};
+use crate::protocol::{ByteCodec, DnsError, PacketBuffer, QueryType, IPV4_SIZE};
 use crate::protocol::names::{decode_name, encode_name};
 
 #[derive(Debug, Clone)]
@@ -11,7 +11,7 @@ impl RData {
     pub fn from_bytes(buffer: &mut PacketBuffer, rtype: QueryType, rdlength: u16) -> Result<Self, DnsError> {
         match rtype {
             QueryType::A => {
-                if rdlength != 4 {
+                if rdlength != IPV4_SIZE {
                     return Err(DnsError::MalformedHeader);
                 }
                 let mut octets = [0u8; 4];
@@ -30,7 +30,7 @@ impl RData {
 
     pub fn len(&self) -> u16 {
         match self {
-            RData::A(_) => 4,
+            RData::A(_) => IPV4_SIZE,
         }
     }
 }

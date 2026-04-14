@@ -1,6 +1,6 @@
 use bytes::{BufMut, BytesMut};
 use crate::protocol::buffer::PacketBuffer;
-use crate::protocol::DnsError;
+use crate::protocol::{DnsError, MAX_JUMPS, COMPRESSION_MASK};
 
 pub fn encode_name(name: &str, buf: &mut BytesMut) {
     for label in name.split('.') {
@@ -15,7 +15,7 @@ pub fn decode_name(buffer: &mut PacketBuffer) -> Result<String, DnsError> {
 }
 
 fn decode_name_recursive(buffer: &mut PacketBuffer, jumps: u8) -> Result<String, DnsError> {
-    if jumps > 5 {
+    if jumps > MAX_JUMPS {
         return Err(DnsError::TooManyJumps);
     }
 
@@ -25,9 +25,9 @@ fn decode_name_recursive(buffer: &mut PacketBuffer, jumps: u8) -> Result<String,
         let len = buffer.read_u8()?;
         
         // 1. Check for compression (top two bits set: 0b11000000)
-        if (len & 0xC0) == 0xC0 {
+        if (len & COMPRESSION_MASK) == COMPRESSION_MASK {
             let b2 = buffer.read_u8()?;
-            let offset = (((len as u16) ^ 0xC0) << 8) | (b2 as u16);
+            let offset = (((len as u16) ^ (COMPRESSION_MASK as u16)) << 8) | (b2 as u16);
             
             // In a recursive jump, we resolve the suffix and join it
             let mut temp_buffer = PacketBuffer {

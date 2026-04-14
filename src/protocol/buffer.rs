@@ -1,4 +1,4 @@
-use crate::protocol::DnsError;
+use crate::protocol::{DnsError, U16_SIZE, U32_SIZE};
 
 pub struct PacketBuffer<'a> {
     pub buf: &'a [u8],
@@ -20,16 +20,16 @@ impl<'a> PacketBuffer<'a> {
     }
 
     pub fn read_u16(&mut self) -> Result<u16, DnsError> {
-        if self.pos + 2 > self.buf.len() {
+        if self.pos + U16_SIZE > self.buf.len() {
             return Err(DnsError::TooShort);
         }
         let val = u16::from_be_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
-        self.pos += 2;
+        self.pos += U16_SIZE;
         Ok(val)
     }
 
     pub fn read_u32(&mut self) -> Result<u32, DnsError> {
-        if self.pos + 4 > self.buf.len() {
+        if self.pos + U32_SIZE > self.buf.len() {
             return Err(DnsError::TooShort);
         }
         let val = u32::from_be_bytes([
@@ -38,7 +38,7 @@ impl<'a> PacketBuffer<'a> {
             self.buf[self.pos + 2],
             self.buf[self.pos + 3],
         ]);
-        self.pos += 4;
+        self.pos += U32_SIZE;
         Ok(val)
     }
 

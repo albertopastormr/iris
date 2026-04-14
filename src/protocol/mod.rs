@@ -36,6 +36,13 @@ pub trait ByteCodec: Sized {
 #[allow(dead_code)]
 pub const HEADER_SIZE: usize = 12;
 pub const MAX_PACKET_SIZE: usize = 512;
+pub const MAX_JUMPS: u8 = 5;
+pub const COMPRESSION_MASK: u8 = 0xC0;
+
+// Data Sizes
+pub const U16_SIZE: usize = 2;
+pub const U32_SIZE: usize = 4;
+pub const IPV4_SIZE: u16 = 4;
 
 // DNS Opcodes
 pub const OPCODE_STANDARD_QUERY: u8 = 0;
@@ -44,10 +51,14 @@ pub const OPCODE_STANDARD_QUERY: u8 = 0;
 pub const RCODE_NO_ERROR: u8 = 0;
 pub const RCODE_NOT_IMPLEMENTED: u8 = 4;
 
+// Query Types
+pub const QTYPE_A: u16 = 1;
+pub const QTYPE_CNAME: u16 = 5;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryType {
-    A = 1,
-    CNAME = 5,
+    A = QTYPE_A as isize,
+    CNAME = QTYPE_CNAME as isize,
 }
 
 impl TryFrom<u16> for QueryType {
@@ -55,8 +66,8 @@ impl TryFrom<u16> for QueryType {
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(QueryType::A),
-            5 => Ok(QueryType::CNAME),
+            QTYPE_A => Ok(QueryType::A),
+            QTYPE_CNAME => Ok(QueryType::CNAME),
             _ => Err(DnsError::InvalidQueryType(value)),
         }
     }
@@ -68,8 +79,8 @@ mod tests {
 
     #[test]
     fn test_query_type_try_from() {
-        assert_eq!(QueryType::try_from(1).unwrap(), QueryType::A);
-        assert_eq!(QueryType::try_from(5).unwrap(), QueryType::CNAME);
+        assert_eq!(QueryType::try_from(QTYPE_A).unwrap(), QueryType::A);
+        assert_eq!(QueryType::try_from(QTYPE_CNAME).unwrap(), QueryType::CNAME);
         assert!(QueryType::try_from(99).is_err());
     }
 }
