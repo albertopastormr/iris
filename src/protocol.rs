@@ -1,10 +1,12 @@
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{BufMut, BytesMut};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DnsError {
-    #[error("DNS message is too short: expected at least {expected} bytes, but got {actual}")]
-    TooShort { expected: usize, actual: usize },
+    #[error("DNS message is too short")]
+    TooShort,
+    #[error("Too many jumps in compressed name")]
+    TooManyJumps,
     #[error("Malformed DNS header")]
     MalformedHeader,
     #[error("Invalid Query Type: {0}")]
@@ -13,8 +15,60 @@ pub enum DnsError {
     InvalidLabelText(#[from] std::string::FromUtf8Error),
 }
 
+pub struct PacketBuffer<'a> {
+    pub buf: &'a [u8],
+    pub pos: usize,
+}
+
+impl<'a> PacketBuffer<'a> {
+    pub fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    pub fn read_u8(&mut self) -> Result<u8, DnsError> {
+        if self.pos >= self.buf.len() {
+            return Err(DnsError::TooShort);
+        }
+        let val = self.buf[self.pos];
+        self.pos += 1;
+        Ok(val)
+    }
+
+    pub fn read_u16(&mut self) -> Result<u16, DnsError> {
+        if self.pos + 2 > self.buf.len() {
+            return Err(DnsError::TooShort);
+        }
+        let val = u16::from_be_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
+        self.pos += 2;
+        Ok(val)
+    }
+
+    pub fn read_u32(&mut self) -> Result<u32, DnsError> {
+        if self.pos + 4 > self.buf.len() {
+            return Err(DnsError::TooShort);
+        }
+        let val = u32::from_be_bytes([
+            self.buf[self.pos],
+            self.buf[self.pos + 1],
+            self.buf[self.pos + 2],
+            self.buf[self.pos + 3],
+        ]);
+        self.pos += 4;
+        Ok(val)
+    }
+
+    pub fn copy_to_slice(&mut self, dest: &mut [u8]) -> Result<(), DnsError> {
+        if self.pos + dest.len() > self.buf.len() {
+            return Err(DnsError::TooShort);
+        }
+        dest.copy_from_slice(&self.buf[self.pos..self.pos + dest.len()]);
+        self.pos += dest.len();
+        Ok(())
+    }
+}
+
 pub trait ByteCodec: Sized {
-    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError>;
+    fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError>;
     fn to_bytes(&self, buf: &mut BytesMut);
 }
 
@@ -73,16 +127,9 @@ pub struct DnsHeader {
 }
 
 impl ByteCodec for DnsHeader {
-    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
-        if buf.remaining() < HEADER_SIZE {
-            return Err(DnsError::TooShort {
-                expected: HEADER_SIZE,
-                actual: buf.remaining(),
-            });
-        }
-
-        let id = buf.get_u16();
-        let flags = buf.get_u16();
+    fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError> {
+        let id = buffer.read_u16()?;
+        let flags = buffer.read_u16()?;
 
         let qr = (flags >> QR_SHIFT) & 1 == 1;
         let opcode = ((flags >> OPCODE_SHIFT) & 0b1111) as u8;
@@ -93,10 +140,10 @@ impl ByteCodec for DnsHeader {
         let z = ((flags >> Z_SHIFT) & 0b111) as u8;
         let rcode = (flags & 0b1111) as u8;
 
-        let qdcount = buf.get_u16();
-        let ancount = buf.get_u16();
-        let nscount = buf.get_u16();
-        let arcount = buf.get_u16();
+        let qdcount = buffer.read_u16()?;
+        let ancount = buffer.read_u16()?;
+        let nscount = buffer.read_u16()?;
+        let arcount = buffer.read_u16()?;
 
         Ok(DnsHeader {
             id,
@@ -178,12 +225,16 @@ pub struct DnsQuestion {
 }
 
 impl ByteCodec for DnsQuestion {
-    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
-        let name = decode_name(buf)?;
-        let qtype = QueryType::try_from(buf.get_u16())?;
-        let qclass = buf.get_u16();
+    fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError> {
+        let name = decode_name(buffer)?;
+        let qtype = QueryType::try_from(buffer.read_u16()?)?;
+        let qclass = buffer.read_u16()?;
 
-        Ok(DnsQuestion { name, qtype, qclass })
+        Ok(DnsQuestion {
+            name,
+            qtype,
+            qclass,
+        })
     }
 
     fn to_bytes(&self, buf: &mut BytesMut) {
@@ -199,15 +250,14 @@ pub enum RData {
 }
 
 impl RData {
-    pub fn from_bytes(buf: &mut impl Buf, rtype: QueryType, rdlength: u16) -> Result<Self, DnsError> {
+    pub fn from_bytes(buffer: &mut PacketBuffer, rtype: QueryType, rdlength: u16) -> Result<Self, DnsError> {
         match rtype {
             QueryType::A => {
                 if rdlength != 4 {
-                    // In a production server, we'd define a specific error for this
                     return Err(DnsError::MalformedHeader);
                 }
                 let mut octets = [0u8; 4];
-                buf.copy_to_slice(&mut octets);
+                buffer.copy_to_slice(&mut octets)?;
                 Ok(RData::A(std::net::Ipv4Addr::from(octets)))
             }
             _ => Err(DnsError::InvalidQueryType(rtype as u16)),
@@ -238,15 +288,21 @@ pub struct DnsRecord {
 }
 
 impl ByteCodec for DnsRecord {
-    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
-        let name = decode_name(buf)?;
-        let rtype = QueryType::try_from(buf.get_u16())?;
-        let class = buf.get_u16();
-        let ttl = buf.get_u32();
-        let rdlength = buf.get_u16();
-        let data = RData::from_bytes(buf, rtype, rdlength)?;
+    fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError> {
+        let name = decode_name(buffer)?;
+        let rtype = QueryType::try_from(buffer.read_u16()?)?;
+        let class = buffer.read_u16()?;
+        let ttl = buffer.read_u32()?;
+        let rdlength = buffer.read_u16()?;
+        let data = RData::from_bytes(buffer, rtype, rdlength)?;
 
-        Ok(DnsRecord { name, rtype, class, ttl, data })
+        Ok(DnsRecord {
+            name,
+            rtype,
+            class,
+            ttl,
+            data,
+        })
     }
 
     fn to_bytes(&self, buf: &mut BytesMut) {
@@ -267,17 +323,17 @@ pub struct DnsMessage {
 }
 
 impl ByteCodec for DnsMessage {
-    fn from_bytes(buf: &mut impl Buf) -> Result<Self, DnsError> {
-        let header = DnsHeader::from_bytes(buf)?;
+    fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError> {
+        let header = DnsHeader::from_bytes(buffer)?;
         let mut questions = Vec::with_capacity(header.qdcount as usize);
         let mut answers = Vec::with_capacity(header.ancount as usize);
 
         for _ in 0..header.qdcount {
-            questions.push(DnsQuestion::from_bytes(buf)?);
+            questions.push(DnsQuestion::from_bytes(buffer)?);
         }
 
         for _ in 0..header.ancount {
-            answers.push(DnsRecord::from_bytes(buf)?);
+            answers.push(DnsRecord::from_bytes(buffer)?);
         }
 
         Ok(DnsMessage { header, questions, answers })
@@ -304,10 +360,42 @@ fn encode_name(name: &str, buf: &mut BytesMut) {
     buf.put_u8(0);
 }
 
-fn decode_name(buf: &mut impl Buf) -> Result<String, DnsError> {
+fn decode_name(buffer: &mut PacketBuffer) -> Result<String, DnsError> {
+    decode_name_recursive(buffer, 0)
+}
+
+fn decode_name_recursive(buffer: &mut PacketBuffer, jumps: u8) -> Result<String, DnsError> {
+    if jumps > 5 {
+        return Err(DnsError::TooManyJumps);
+    }
+
     let mut name = String::new();
+
     loop {
-        let len = buf.get_u8();
+        let len = buffer.read_u8()?;
+        
+        // 1. Check for compression (top two bits set: 0b11000000)
+        if (len & 0xC0) == 0xC0 {
+            let b2 = buffer.read_u8()?;
+            let offset = (((len as u16) ^ 0xC0) << 8) | (b2 as u16);
+            
+            // In a recursive jump, we resolve the suffix and join it
+            let mut temp_buffer = PacketBuffer {
+                buf: buffer.buf,
+                pos: offset as usize,
+            };
+            
+            let suffix = decode_name_recursive(&mut temp_buffer, jumps + 1)?;
+            if !name.is_empty() {
+                name.push('.');
+            }
+            name.push_str(&suffix);
+            
+            // Once we jump, the name is finished
+            return Ok(name);
+        }
+
+        // 2. Normal label
         if len == 0 {
             break;
         }
@@ -317,22 +405,16 @@ fn decode_name(buf: &mut impl Buf) -> Result<String, DnsError> {
         }
 
         let mut label_bytes = vec![0; len as usize];
-        if buf.remaining() < len as usize {
-            return Err(DnsError::TooShort {
-                expected: len as usize,
-                actual: buf.remaining(),
-            });
-        }
-        buf.copy_to_slice(&mut label_bytes);
+        buffer.copy_to_slice(&mut label_bytes)?;
         name.push_str(&String::from_utf8(label_bytes)?);
     }
+
     Ok(name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::Bytes;
 
     #[test]
     fn test_header_serialization_deserialization() {
@@ -356,8 +438,9 @@ mod tests {
         original_header.to_bytes(&mut buf);
         assert_eq!(buf.len(), HEADER_SIZE);
 
-        let mut read_buf = buf.freeze();
-        let decoded_header = DnsHeader::from_bytes(&mut read_buf).expect("Should decode");
+        let bytes = buf.freeze();
+        let mut packet_buffer = PacketBuffer::new(&bytes);
+        let decoded_header = DnsHeader::from_bytes(&mut packet_buffer).expect("Should decode");
 
         assert_eq!(decoded_header.id, original_header.id);
         assert_eq!(decoded_header.qr, original_header.qr);
@@ -369,9 +452,10 @@ mod tests {
 
     #[test]
     fn test_header_too_short() {
-        let mut short_buf = Bytes::from_static(&[0; 10]);
-        let result = DnsHeader::from_bytes(&mut short_buf);
-        assert!(matches!(result, Err(DnsError::TooShort { .. })));
+        let bytes = [0u8; 10];
+        let mut packet_buffer = PacketBuffer::new(&bytes);
+        let result = DnsHeader::from_bytes(&mut packet_buffer);
+        assert!(matches!(result, Err(DnsError::TooShort)));
     }
 
     #[test]
@@ -399,8 +483,9 @@ mod tests {
         assert_eq!(&buf[8..11], b"com");
         assert_eq!(buf[11], 0);
 
-        let mut read_buf = buf.freeze();
-        let decoded = DnsQuestion::from_bytes(&mut read_buf).unwrap();
+        let bytes = buf.freeze();
+        let mut packet_buffer = PacketBuffer::new(&bytes);
+        let decoded = DnsQuestion::from_bytes(&mut packet_buffer).unwrap();
         assert_eq!(decoded.name, "google.com");
         assert_eq!(decoded.qtype, QueryType::A);
         assert_eq!(decoded.qclass, 1);
@@ -436,8 +521,9 @@ mod tests {
         let mut buf = BytesMut::new();
         original.to_bytes(&mut buf);
 
-        let mut read_buf = buf.freeze();
-        let decoded = DnsMessage::from_bytes(&mut read_buf).unwrap();
+        let bytes = buf.freeze();
+        let mut packet_buffer = PacketBuffer::new(&bytes);
+        let decoded = DnsMessage::from_bytes(&mut packet_buffer).unwrap();
 
         assert_eq!(decoded.header.id, 1234);
         assert_eq!(decoded.questions.len(), 2);
@@ -448,10 +534,27 @@ mod tests {
     #[test]
     fn test_truncated_label() {
         // Label says length is 10, but only 3 bytes follow before null
-        let data = Bytes::from_static(&[10, b'a', b'b', b'c', 0]);
-        let mut buf = data;
-        let result = DnsQuestion::from_bytes(&mut buf);
-        assert!(matches!(result, Err(DnsError::TooShort { .. })));
+        let data = [10, b'a', b'b', b'c', 0];
+        let mut packet_buffer = PacketBuffer::new(&data);
+        let result = DnsQuestion::from_bytes(&mut packet_buffer);
+        assert!(matches!(result, Err(DnsError::TooShort)));
+    }
+
+    #[test]
+    fn test_decompression() {
+        // Packet:
+        // [0..12] Header
+        // [12..24] "google.com" (length 6 + google + length 3 + com + 0)
+        // [24] Pointer to offset 12 (0xC0, 0x0C)
+        let mut data = vec![0u8; 12]; // Dummy header
+        data.extend_from_slice(&[6, b'g', b'o', b'o', b'g', b'l', b'e', 3, b'c', b'o', b'm', 0]);
+        data.extend_from_slice(&[0xC0, 12]);
+
+        let mut packet_buffer = PacketBuffer::new(&data);
+        packet_buffer.pos = 24; // Seek to the pointer
+
+        let name = decode_name(&mut packet_buffer).expect("Should decode compressed name");
+        assert_eq!(name, "google.com");
     }
 
     #[test]
@@ -481,12 +584,47 @@ mod tests {
         let mut buf = BytesMut::new();
         record.to_bytes(&mut buf);
 
-        let mut read_buf = buf.freeze();
-        let decoded = DnsRecord::from_bytes(&mut read_buf).unwrap();
+        let bytes = buf.freeze();
+        let mut packet_buffer = PacketBuffer::new(&bytes);
+        let decoded = DnsRecord::from_bytes(&mut packet_buffer).unwrap();
 
         assert_eq!(decoded.name, "test.com");
         assert_eq!(decoded.ttl, 300);
         let RData::A(addr) = decoded.data;
         assert_eq!(addr, std::net::Ipv4Addr::new(1, 2, 3, 4));
+    }
+
+    #[test]
+    fn test_packet_buffer_boundary_checks() {
+        let data = [1, 2, 3];
+        let mut buffer = PacketBuffer::new(&data);
+        
+        assert!(buffer.read_u32().is_err()); // Needs 4, only has 3
+        buffer.pos = 2;
+        assert!(buffer.read_u16().is_err()); // Needs 2, only has 1
+    }
+
+    #[test]
+    fn test_infinite_compression_loop() {
+        // Offset 0: 0xC0, 0x00 (Points to itself)
+        let data = [0xC0, 0x00];
+        let mut buffer = PacketBuffer::new(&data);
+        let result = decode_name(&mut buffer);
+        
+        assert!(matches!(result, Err(DnsError::TooManyJumps)));
+    }
+
+    #[test]
+    fn test_nested_decompression() {
+        // [0..11] "google.com"
+        // [11.. ] "news." + pointer to 0
+        let mut data = vec![6, b'g', b'o', b'o', b'g', b'l', b'e', 3, b'c', b'o', b'm', 0];
+        data.extend_from_slice(&[4, b'n', b'e', b'w', b's', 0xC0, 0]);
+
+        let mut buffer = PacketBuffer::new(&data);
+        buffer.pos = 12; // Start at "news"
+
+        let name = decode_name(&mut buffer).unwrap();
+        assert_eq!(name, "news.google.com");
     }
 }

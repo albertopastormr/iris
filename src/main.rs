@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use std::net::UdpSocket;
 
 mod protocol;
-use protocol::{ByteCodec, DnsMessage, DnsRecord, QueryType, RData, MAX_PACKET_SIZE};
+use protocol::{ByteCodec, DnsMessage, DnsRecord, PacketBuffer, QueryType, RData, MAX_PACKET_SIZE};
 use std::net::Ipv4Addr;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:2053";
@@ -20,8 +20,8 @@ fn main() -> Result<()> {
                 println!("Received {} bytes from {}", size, source);
                 
                 // 1. Decode the query message
-                let mut query_bytes = &buf[..size];
-                let query_msg = match DnsMessage::from_bytes(&mut query_bytes) {
+                let mut packet_buffer = PacketBuffer::new(&buf[..size]);
+                let query_msg = match DnsMessage::from_bytes(&mut packet_buffer) {
                     Ok(msg) => msg,
                     Err(e) => {
                         eprintln!("Failed to parse DNS message: {}", e);
