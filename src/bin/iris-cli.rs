@@ -1,17 +1,30 @@
 use std::net::UdpSocket;
 use std::env;
-use iris::protocol::{ByteCodec, DnsMessage, DnsHeader, DnsQuestion, PacketBuffer, QueryType, MAX_PACKET_SIZE};
+use iris::protocol::{ByteCodec, DnsMessage, DnsHeader, DnsQuestion, PacketBuffer, QueryType, MAX_PACKET_SIZE, DEFAULT_SERVER_ADDR};
 use bytes::BytesMut;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: iris-cli <domain>");
+    
+    // Parse server address
+    let mut server_addr = DEFAULT_SERVER_ADDR.to_string();
+    if let Some(pos) = args.iter().position(|r| r == "-s" || r == "--server") {
+        if let Some(val) = args.get(pos + 1) {
+            server_addr = val.clone();
+        }
+    }
+
+    // Parse domain (last non-flag argument)
+    let domain = args.last().filter(|s| !s.starts_with('-'));
+
+    if domain.is_none() || args.len() < 2 {
+        println!("🌈 IrisDNS CLI");
+        println!("Usage: iris-cli [-s <server>] <domain>");
+        println!("Default server: {}", DEFAULT_SERVER_ADDR);
         return;
     }
 
-    let domain = &args[1];
-    let server_addr = "127.0.0.1:2053";
+    let domain = domain.unwrap();
     
     // 1. Build Query
     let mut header = DnsHeader::default();
@@ -36,19 +49,22 @@ fn main() {
 
     // 2. Send to server
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't bind local socket");
-    socket.send_to(&buf, server_addr).expect("Failed to send query");
+    socket.send_to(&buf, &server_addr).expect("Failed to send query");
 
-    println!("🔍 Querying IrisDNS for {}...", domain);
+    println!("🔍 Querying {} for {}...", server_addr, domain);
 
     // 3. Receive Response
     let mut res_buf = [0; MAX_PACKET_SIZE];
-    let (size, _) = socket.recv_from(&mut res_buf).expect("No response received");
+    match socket.recv_from(&mut res_buf) {
+        Ok((size, _)) => {
+            let mut packet_buffer = PacketBuffer::new(&res_buf[..size]);
+            let response = DnsMessage::from_bytes(&mut packet_buffer).expect("Failed to parse response");
 
-    let mut packet_buffer = PacketBuffer::new(&res_buf[..size]);
-    let response = DnsMessage::from_bytes(&mut packet_buffer).expect("Failed to parse response");
-
-    println!("✅ Received Response (ID: 0x{:X})", response.header.id);
-    for answer in response.answers {
-        println!("   -> {} [{:?}] TTL: {} DATA: {:?}", answer.name, answer.rtype, answer.ttl, answer.data);
+            println!("✅ Received Response (ID: 0x{:X})", response.header.id);
+            for answer in response.answers {
+                println!("   -> {} [{:?}] TTL: {} DATA: {:?}", answer.name, answer.rtype, answer.ttl, answer.data);
+            }
+        }
+        Err(_) => println!("❌ No response received from server."),
     }
 }

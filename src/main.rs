@@ -11,7 +11,8 @@ fn main() -> Result<()> {
         None
     };
 
-    let server = IrisServer::new("127.0.0.1:2053", resolver_addr)?;
+    let server_addr = iris::protocol::DEFAULT_SERVER_ADDR;
+    let server = IrisServer::new(server_addr, resolver_addr)?;
     server.run()?;
 
     Ok(())

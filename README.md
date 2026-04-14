@@ -1,37 +1,57 @@
-[![progress-banner](https://backend.codecrafters.io/progress/dns-server/430996e9-8709-45b4-8252-bc7cf3e12842)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# 🌈 IrisDNS
 
-This is a starting point for Rust solutions to the
-["Build Your Own DNS server" Challenge](https://app.codecrafters.io/courses/dns-server/overview).
+**IrisDNS** is a high-performance, modular DNS recursive forwarder and parser built in Rust. Named after the personification of the rainbow and messenger of the gods, Iris acts as the bridge between your local network and the global internet.
 
-In this challenge, you'll build a DNS server that's capable of parsing and
-creating DNS packets, responding to DNS queries, handling various record types
-and doing recursive resolve. Along the way we'll learn about the DNS protocol,
-DNS packet format, root servers, authoritative servers, forwarding servers,
-various record types (A, AAAA, CNAME, etc) and more.
+## ✨ Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- **🚀 High Performance**: Zero-copy parsing using Rust's lifetime system (`&'a [u8]`) for maximum efficiency.
+- **🛡️ Battle-Hardened**: Robust recursive name decompression with built-in protection against infinite jump loops.
+- **🧩 Modular Architecture**: Cleanly segregated components for parsing, forwarding, and packet coordination.
+- **🔍 Built-in CLI**: Includes `iris-cli`, a standalone testing tool to verify DNS resolutions.
+- **🛡️ Memory Safe**: 100% Safe Rust with strict boundary checking on all buffer operations.
 
-# Passing the first stage
+## 🏗️ Architecture
 
-The entry point for your `your_program.sh` implementation is in `src/main.rs`.
-Study and uncomment the relevant code, and push your changes to pass the first
-stage:
+IrisDNS is structured into several focused modules:
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+*   **`protocol`**: A core library implementing the DNS specification (RFC 1035).
+*   **`server`**: The core UDP engine and request coordinator.
+*   **`forwarder`**: Handles the logic of splitting multi-question queries and merging upstream responses.
+*   **`handler`**: Local resolution falls back here when no upstream is specified.
+
+## 🚀 Quick Start
+
+Ensure you have [Rust](https://rustup.rs/) installed.
+
+### 1. Start the Server
+Run the Iris server with an upstream resolver (e.g., Google's 8.8.8.8):
+```bash
+make run-forward RESOLVER=8.8.8.8:53
 ```
 
-Time to move on to the next stage!
+### 2. Query the Server
+Open a new terminal and use the `iris-cli` to perform a lookup:
+```bash
+make query DOMAIN=openai.com
+```
 
-# Stage 2 & beyond
+## 🛠️ Development
 
-Note: This section is for stages 2 and beyond.
+We use a simple `Makefile` for common development tasks:
 
-1. Ensure you have `cargo (1.94)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main.rs`. This command compiles your Rust project, so it might be slow
-   the first time you run it. Subsequent runs will be fast.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+| Command | Description |
+| :--- | :--- |
+| `make test` | Run the full 16-test suite |
+| `make check` | Verify code validity |
+| `make run` | Run server in standalone mode |
+| `make clean` | Remove cargo artifacts |
+
+## 🧪 Testing
+
+IrisDNS is backed by a comprehensive unit test suite:
+```bash
+make test
+```
+
+## ⚖️ License
+This project is licensed under the MIT License.
