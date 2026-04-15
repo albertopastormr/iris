@@ -35,6 +35,7 @@ pub trait ByteCodec: Sized {
 
 #[allow(dead_code)]
 pub const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:2053";
+pub const ANY_PORT_ADDR: &str = "0.0.0.0:0";
 pub const HEADER_SIZE: usize = 12;
 pub const MAX_PACKET_SIZE: usize = 512;
 pub const MAX_JUMPS: u8 = 5;
