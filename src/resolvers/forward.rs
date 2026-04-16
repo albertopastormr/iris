@@ -1,21 +1,23 @@
 use std::net::{UdpSocket, SocketAddr};
 use crate::protocol::{ByteCodec, DnsMessage, PacketBuffer, MAX_PACKET_SIZE, DnsHeader};
+use crate::resolvers::DnsResolver;
 use anyhow::Result;
 
-pub struct Forwarder {
+pub struct ForwardResolver {
     resolver_addr: SocketAddr,
 }
 
-impl Forwarder {
+impl ForwardResolver {
     pub fn new(resolver_addr: SocketAddr) -> Self {
         Self { resolver_addr }
     }
+}
 
-    pub fn forward(&self, query: &DnsMessage) -> Result<DnsMessage> {
+impl DnsResolver for ForwardResolver {
+    fn resolve(&self, query: &DnsMessage) -> Result<DnsMessage> {
         let mut response_answers = Vec::with_capacity(query.questions.len());
 
         for question in &query.questions {
-            // We only need to mimic the ID from the original query.
             let upstream_query = DnsMessage {
                 header: DnsHeader {
                     id: query.header.id,
@@ -29,12 +31,9 @@ impl Forwarder {
             let mut upstream_buf = bytes::BytesMut::with_capacity(MAX_PACKET_SIZE);
             upstream_query.to_bytes(&mut upstream_buf);
 
-            // Dedicated socket for this specific upstream request.
-            // Using "0" port lets the OS assign a random high-range port.
             let temp_socket = UdpSocket::bind(crate::protocol::ANY_PORT_ADDR)?;
             temp_socket.send_to(&upstream_buf, self.resolver_addr)?;
 
-            // Receive answer
             let mut answer_buf = [0; MAX_PACKET_SIZE];
             let (size, _) = temp_socket.recv_from(&mut answer_buf)?;
             

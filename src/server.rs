@@ -1,33 +1,30 @@
 use std::net::{UdpSocket, SocketAddr};
 use crate::protocol::{ByteCodec, DnsMessage, PacketBuffer, MAX_PACKET_SIZE};
-use crate::forwarder::Forwarder;
-use crate::handler;
+use crate::resolvers::DnsResolver;
 use anyhow::Result;
 use bytes::BytesMut;
 
 pub struct IrisServer {
     socket: UdpSocket,
-    forwarder: Option<Forwarder>,
+    resolver: Box<dyn DnsResolver>,
 }
 
 impl IrisServer {
-    pub fn new(addr: &str, resolver: Option<SocketAddr>) -> Result<Self> {
+    pub fn new(addr: &str, resolver: Box<dyn DnsResolver>) -> Result<Self> {
         let socket = UdpSocket::bind(addr)?;
-        let forwarder = resolver.map(Forwarder::new);
-        Ok(Self { socket, forwarder })
+        Ok(Self { socket, resolver })
     }
 
     pub fn run(&self) -> Result<()> {
         println!("🌈 IrisDNS is listening on {}", self.socket.local_addr()?);
-        if let Some(_) = &self.forwarder {
-            println!("🔄 Forwarding mode enabled.");
-        }
-
+        
         let mut buf = [0; MAX_PACKET_SIZE];
         loop {
             match self.socket.recv_from(&mut buf) {
                 Ok((size, source)) => {
-                    self.handle_request(&buf[..size], source)?;
+                    if let Err(e) = self.handle_request(&buf[..size], source) {
+                        eprintln!("Error handling request from {}: {}", source, e);
+                    }
                 }
                 Err(e) => eprintln!("Error receiving packet: {}", e),
             }
@@ -44,11 +41,8 @@ impl IrisServer {
             }
         };
 
-        let response = if let Some(forwarder) = &self.forwarder {
-            forwarder.forward(&query)?
-        } else {
-            handler::handle_locally(&query)
-        };
+        // THE BEAUTY: IrisServer doesn't know (or care) HOW it's resolved!
+        let response = self.resolver.resolve(&query)?;
 
         let mut res_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
         response.to_bytes(&mut res_buf);
