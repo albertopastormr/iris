@@ -24,9 +24,13 @@ IrisDNS is structured into several focused modules:
 Ensure you have [Rust](https://rustup.rs/) installed.
 
 ### 1. Start the Server
-Run the Iris server with an upstream resolver (e.g., Google's 8.8.8.8):
+Run the Iris server with an upstream resolver (e.g., Google's 8.8.8.8). The port defaults to **53** if omitted:
 ```bash
+# Specifying a port
 make run-forward RESOLVER=8.8.8.8:53
+
+# Using the default port (53)
+make run-forward RESOLVER=8.8.8.8
 ```
 
 ### 2. Query the Server
