@@ -15,6 +15,10 @@ impl IrisServer {
         Ok(Self { socket, resolver })
     }
 
+    pub fn get_local_addr(&self) -> Result<SocketAddr> {
+        Ok(self.socket.local_addr()?)
+    }
+
     pub fn run(&self) -> Result<()> {
         println!("🌈 IrisDNS is listening on {}", self.socket.local_addr()?);
         
@@ -41,7 +45,6 @@ impl IrisServer {
             }
         };
 
-        // THE BEAUTY: IrisServer doesn't know (or care) HOW it's resolved!
         let response = self.resolver.resolve(&query)?;
 
         let mut res_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
