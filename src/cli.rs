@@ -1,4 +1,4 @@
-use std::net::{UdpSocket, SocketAddr};
+use std::net::UdpSocket;
 use crate::protocol::{ByteCodec, DnsMessage, DnsHeader, DnsQuestion, PacketBuffer, MAX_PACKET_SIZE};
 use bytes::BytesMut;
 
