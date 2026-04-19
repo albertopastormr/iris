@@ -51,7 +51,23 @@ pub const OPCODE_STANDARD_QUERY: u8 = 0;
 
 // DNS Response Codes
 pub const RCODE_NO_ERROR: u8 = 0;
+pub const RCODE_FORM_ERROR: u8 = 1;
+pub const RCODE_SERVER_FAILURE: u8 = 2;
+pub const RCODE_NAME_ERROR: u8 = 3;
 pub const RCODE_NOT_IMPLEMENTED: u8 = 4;
+pub const RCODE_REFUSED: u8 = 5;
+
+pub fn rcode_to_str(rcode: u8) -> &'static str {
+    match rcode {
+        RCODE_NO_ERROR => "NOERROR",
+        RCODE_FORM_ERROR => "FORMERR",
+        RCODE_SERVER_FAILURE => "SERVFAIL",
+        RCODE_NAME_ERROR => "NXDOMAIN",
+        RCODE_NOT_IMPLEMENTED => "NOTIMP",
+        RCODE_REFUSED => "REFUSED",
+        _ => "UNKNOWN",
+    }
+}
 
 // Query Types
 pub const QTYPE_A: u16 = 1;
@@ -72,6 +88,14 @@ impl TryFrom<u16> for QueryType {
             QTYPE_CNAME => Ok(QueryType::CNAME),
             _ => Err(DnsError::InvalidQueryType(value)),
         }
+    }
+}
+
+pub fn qtype_to_str(qtype: u16) -> String {
+    match qtype {
+        QTYPE_A => "A".to_string(),
+        QTYPE_CNAME => "CNAME".to_string(),
+        _ => format!("TYPE{}", qtype),
     }
 }
 

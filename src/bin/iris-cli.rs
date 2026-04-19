@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 use std::env;
-use iris::protocol::{ByteCodec, DnsMessage, DnsHeader, DnsQuestion, PacketBuffer, QueryType, MAX_PACKET_SIZE, DEFAULT_SERVER_ADDR};
+use iris::protocol::{ByteCodec, DnsMessage, DnsHeader, DnsQuestion, PacketBuffer, MAX_PACKET_SIZE, DEFAULT_SERVER_ADDR};
 use bytes::BytesMut;
 
 fn main() {
@@ -34,7 +34,7 @@ fn main() {
 
     let question = DnsQuestion {
         name: domain.to_string(),
-        qtype: QueryType::A,
+        qtype: iris::protocol::QTYPE_A,
         qclass: 1,
     };
 
@@ -61,8 +61,19 @@ fn main() {
             let response = DnsMessage::from_bytes(&mut packet_buffer).expect("Failed to parse response");
 
             println!("✅ Received Response (ID: 0x{:X})", response.header.id);
-            for answer in response.answers {
-                println!("   -> {} [{:?}] TTL: {} DATA: {:?}", answer.name, answer.rtype, answer.ttl, answer.data);
+            println!("   Status: {}", iris::protocol::rcode_to_str(response.header.rcode));
+            
+            if response.answers.is_empty() {
+                println!("   (No records found in answer section)");
+            } else {
+                for answer in response.answers {
+                    println!("   -> {} [{}] TTL: {} DATA: {:?}", 
+                        answer.name, 
+                        iris::protocol::qtype_to_str(answer.rtype), 
+                        answer.ttl, 
+                        answer.data
+                    );
+                }
             }
         }
         Err(_) => println!("❌ No response received from server."),

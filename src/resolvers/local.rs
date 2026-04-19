@@ -1,4 +1,4 @@
-use crate::protocol::{DnsMessage, DnsRecord, RData, QueryType};
+use crate::protocol::{DnsMessage, DnsRecord, RData};
 use crate::resolvers::DnsResolver;
 use anyhow::Result;
 use std::net::Ipv4Addr;
@@ -12,7 +12,7 @@ impl DnsResolver for LocalResolver {
             .iter()
             .map(|q| DnsRecord {
                 name: q.name.clone(),
-                rtype: QueryType::A,
+                rtype: crate::protocol::QTYPE_A,
                 class: 1,
                 ttl: 60,
                 data: RData::A(Ipv4Addr::new(8, 8, 8, 8)),
@@ -33,7 +33,7 @@ impl DnsResolver for LocalResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{DnsHeader, DnsQuestion, QueryType};
+    use crate::protocol::{DnsHeader, DnsQuestion};
 
     #[test]
     fn test_local_resolver_identity_matching() {
@@ -46,7 +46,7 @@ mod tests {
             header,
             questions: vec![DnsQuestion {
                 name: "test.com".to_string(),
-                qtype: QueryType::A,
+                qtype: crate::protocol::QTYPE_A,
                 qclass: 1,
             }],
             answers: vec![],

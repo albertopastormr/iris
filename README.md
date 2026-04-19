@@ -45,9 +45,11 @@ We use a simple `Makefile` for common development tasks:
 
 | Command | Description |
 | :--- | :--- |
-| `make test` | Run the full 16-test suite |
-| `make check` | Verify code validity |
-| `make run` | Run server in standalone mode |
+| `make build` | Build the server and CLI binaries |
+| `make test` | Run the full test suite |
+| `make query` | Fast query using existing CLI binary (no build check) |
+| `make query-dev` | Query while automatically checking for code changes |
+| `make run` | Build and run server in standalone mode |
 | `make clean` | Remove cargo artifacts |
 
 ## 🧪 Testing

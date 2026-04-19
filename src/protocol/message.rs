@@ -51,13 +51,13 @@ mod tests {
 
         let q1 = DnsQuestion {
             name: "a.com".to_string(),
-            qtype: crate::protocol::QueryType::A,
+            qtype: crate::protocol::QTYPE_A,
             qclass: 1,
         };
 
         let q2 = DnsQuestion {
             name: "b.org".to_string(),
-            qtype: crate::protocol::QueryType::CNAME,
+            qtype: crate::protocol::QTYPE_CNAME,
             qclass: 1,
         };
 

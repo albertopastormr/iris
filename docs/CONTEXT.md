@@ -23,6 +23,12 @@ IrisDNS is structured as a **Crate Library (`lib.rs`)** that powers two binaries
 
 ## 🛡️ 2. Core Protocol Logic (The "How It Works")
 
+### Robust Parsing
+Inherently unstable upstream responses are handled gracefully:
+- **`DnsRecord` Robustness**: Both `DnsQuestion` and `DnsRecord` use raw `u16` for type codes to allow forwarding specialized queries (like `AAAA` or `MX`) even if the server doesn't have specific parsing logic for them yet.
+- **Support for CNAME**: Full recursive parsing of CNAME records is supported.
+- **Fail-Safe RData**: Any unrecognized record types are stored as `RData::Unknown(Vec<u8>)` rather than failing the whole packet, ensuring the server stays up even when encountering modern DNS extensions.
+
 ### Zero-Copy Parsing
 We use `PacketBuffer<'a>` to read from the UDP stream without initial heap allocation. It maintains a cursor (`pos`) and a lifetime link to the incoming byte slice, ensuring peak memory efficiency.
 
@@ -49,12 +55,15 @@ Many upstream resolvers (like 8.8.8.8) only handle **single-question** packets. 
 3.  Collect and merge N responses into a single client reply.
 4.  ID mimicking: The response **must** match the original query ID.
 
+### Flexible Upstream Addressing
+The server supports both `IP:PORT` format and plain `IP` format (defaulting to port 53) for the upstream resolver configuration in `src/main.rs`.
+
 ---
 
 ## 🚧 4. Known Constraints & Future Directions
 
 ### Current Limits
--   **UDP/53 Only**: No TCP support currently.
+-   **UDP/53 Primary**: No TCP support currently.
 -   **512-Byte Bound**: Strict adherence to RFC 1035 packet limits.
 -   **Blocking I/O**: The server uses a standard `std::net::UdpSocket` loop.
 

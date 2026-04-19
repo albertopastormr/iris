@@ -22,6 +22,7 @@ impl DnsResolver for ForwardResolver {
                 header: DnsHeader {
                     id: query.header.id,
                     qdcount: 1,
+                    rd: true, // Crucial: Ask the upstream to perform recursion
                     ..Default::default()
                 },
                 questions: vec![question.clone()],
@@ -58,7 +59,7 @@ impl DnsResolver for ForwardResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{DnsHeader, DnsQuestion, QueryType, DnsRecord, RData};
+    use crate::protocol::{DnsHeader, DnsQuestion, DnsRecord, RData};
     use std::thread;
 
     #[test]
@@ -81,7 +82,7 @@ mod tests {
                 response.header.ancount = 1;
                 response.answers.push(DnsRecord {
                     name: query.questions[0].name.clone(),
-                    rtype: QueryType::A,
+                    rtype: crate::protocol::QTYPE_A,
                     class: 1,
                     ttl: 60,
                     data: RData::A(std::net::Ipv4Addr::new(1, 2, 3, 4)),
@@ -97,7 +98,7 @@ mod tests {
         let resolver = ForwardResolver::new(mock_addr);
         let query = DnsMessage {
             header: DnsHeader { id: 0x1234, qdcount: 1, ..Default::default() },
-            questions: vec![DnsQuestion { name: "test.com".to_string(), qtype: QueryType::A, qclass: 1 }],
+            questions: vec![DnsQuestion { name: "test.com".to_string(), qtype: crate::protocol::QTYPE_A, qclass: 1 }],
             answers: vec![],
         };
 
@@ -106,7 +107,10 @@ mod tests {
         // 4. Verify the merge happened correctly
         assert_eq!(result.header.id, 0x1234);
         assert_eq!(result.answers.len(), 1);
-        let RData::A(ip) = result.answers[0].data;
-        assert_eq!(ip, std::net::Ipv4Addr::new(1, 2, 3, 4));
+        if let RData::A(ip) = result.answers[0].data {
+            assert_eq!(ip, std::net::Ipv4Addr::new(1, 2, 3, 4));
+        } else {
+            panic!("Expected RData::A");
+        }
     }
 }

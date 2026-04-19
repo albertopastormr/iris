@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Alberto Pastor <albertopastormr@gmail.com>"]
 edition = "2024"
 rust-version = "1.94"
+default-run = "iris"
 
 [dependencies]
 anyhow = "1.0.68"                                # error handling

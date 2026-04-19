@@ -1,18 +1,18 @@
 use bytes::BufMut;
-use crate::protocol::{ByteCodec, DnsError, PacketBuffer, QueryType};
+use crate::protocol::{ByteCodec, DnsError, PacketBuffer};
 use crate::protocol::names::{decode_name, encode_name};
 
 #[derive(Debug, Clone)]
 pub struct DnsQuestion {
     pub name: String,
-    pub qtype: QueryType,
+    pub qtype: u16,
     pub qclass: u16,
 }
 
 impl ByteCodec for DnsQuestion {
     fn from_bytes(buffer: &mut PacketBuffer) -> Result<Self, DnsError> {
         let name = decode_name(buffer)?;
-        let qtype = QueryType::try_from(buffer.read_u16()?)?;
+        let qtype = buffer.read_u16()?;
         let qclass = buffer.read_u16()?;
 
         Ok(DnsQuestion {
@@ -24,7 +24,7 @@ impl ByteCodec for DnsQuestion {
 
     fn to_bytes(&self, buf: &mut bytes::BytesMut) {
         encode_name(&self.name, buf);
-        buf.put_u16(self.qtype as u16);
+        buf.put_u16(self.qtype);
         buf.put_u16(self.qclass);
     }
 }
@@ -38,7 +38,7 @@ mod tests {
     fn test_question_codec() {
         let original = DnsQuestion {
             name: "google.com".to_string(),
-            qtype: QueryType::A,
+            qtype: crate::protocol::QTYPE_A,
             qclass: 1,
         };
 
@@ -56,7 +56,7 @@ mod tests {
         let mut packet_buffer = PacketBuffer::new(&bytes);
         let decoded = DnsQuestion::from_bytes(&mut packet_buffer).unwrap();
         assert_eq!(decoded.name, "google.com");
-        assert_eq!(decoded.qtype, QueryType::A);
+        assert_eq!(decoded.qtype, crate::protocol::QTYPE_A);
         assert_eq!(decoded.qclass, 1);
     }
 }

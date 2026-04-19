@@ -34,7 +34,7 @@ fn test_end_to_end_server_resolution() {
         header,
         questions: vec![DnsQuestion {
             name: test_domain.to_string(),
-            qtype: QueryType::A,
+            qtype: iris::protocol::QTYPE_A,
             qclass: 1,
         }],
         answers: vec![],
