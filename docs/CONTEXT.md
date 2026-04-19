@@ -5,19 +5,20 @@ Welcome, Agent. You are entering the **IrisDNS** codebase—a high-performance, 
 ---
 
 ## 🏗️ 1. High-Level Architecture
-IrisDNS is structured as a **Crate Library (`lib.rs`)** that powers two binaries:
+IrisDNS is structured as a **Crate Library (`lib.rs`)** that powers a unified CLI binary:
 
-1.  **`src/main.rs`**: The primary DNS server.
-2.  **`src/bin/iris-cli.rs`**: A standalone testing utility for resolution.
+1.  **`src/main.rs`**: The unified entry point using `clap` for subcommands (`start`, `query`).
 
 ### Core Modules
-*   **`protocol/`**: The "Spec-In-Code".
+*   **`protocol/`**: The "Spec-In-Code" (RFC 1035).
     *   `buffer.rs`: Zero-copy `PacketBuffer<'a>` with bounds-checking.
     *   `names.rs`: Recursive label decompression with `MAX_JUMPS`.
     *   `header.rs`, `question.rs`, `record.rs`, `message.rs`: Binary codecs.
+*   **`cli.rs`**: Logic for the `query` subcommand and CLI interaction.
 *   **`server.rs`**: The main UDP listener and coordinator.
-*   **`forwarder.rs`**: Business logic for splitting multi-question queries and merging responses from an upstream resolver.
-*   **`handler.rs`**: Local resolution fallback.
+*   **`resolvers/`**: Resolution strategies.
+    *   `forward.rs`: Logic for splitting multi-question queries and merging responses.
+    *   `local.rs`: Local resolution fallback.
 
 ---
 

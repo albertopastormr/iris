@@ -7,12 +7,13 @@ use iris::resolvers::build_resolver;
 
 #[test]
 fn test_cli_help_message() {
-    let mut cmd = Command::cargo_bin("iris-cli").unwrap();
+    let mut cmd = Command::cargo_bin("iris").unwrap();
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("🌈 IrisDNS CLI"))
-        .stdout(predicate::str::contains("Usage:"));
+    cmd.arg("--help")
+       .assert()
+       .success()
+       .stdout(predicate::str::contains("IrisDNS"))
+       .stdout(predicate::str::contains("Usage: iris"));
 }
 
 #[test]
@@ -31,18 +32,19 @@ fn test_cli_full_cycle_against_server() {
     // Give server a moment to bind
     thread::sleep(Duration::from_millis(200));
 
-    // Run iris-cli binary
-    let mut cmd = Command::cargo_bin("iris-cli").unwrap();
+    // Run iris query binary
+    let mut cmd = Command::cargo_bin("iris").unwrap();
     
-    // Command: iris-cli -s 127.0.0.1:XXXX test.com
-    cmd.arg("-s")
+    // Command: iris query -s 127.0.0.1:XXXX test.com
+    cmd.arg("query")
+       .arg("--server")
        .arg(&local_addr_str)
        .arg("test.com");
 
     // Verify CLI output contains the success indicators
     cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("🔍 Querying"))
-        .stdout(predicate::str::contains("✅ Received Response"))
-        .stdout(predicate::str::contains("test.com [A]"));
+       .success()
+       .stdout(predicate::str::contains("🔍 Querying"))
+       .stdout(predicate::str::contains("✅ Received Response"))
+       .stdout(predicate::str::contains("test.com [A]"));
 }

@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 use iris::server::IrisServer;
 use iris::resolvers::build_resolver;
-use iris::protocol::{DnsMessage, DnsHeader, DnsQuestion, QueryType, ByteCodec, MAX_PACKET_SIZE};
+use iris::protocol::{DnsMessage, DnsHeader, DnsQuestion, ByteCodec, MAX_PACKET_SIZE};
 use bytes::BytesMut;
 
 #[test]
